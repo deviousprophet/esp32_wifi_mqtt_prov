@@ -26,13 +26,14 @@ static const char* TAG = "app_prov_handler";
 /* Provide definition of wifi_prov_ctx_t */
 struct wifi_prov_ctx {
     wifi_config_t wifi_cfg;
+    esp_mqtt_client_config_t mqtt_cfg;
 };
 
-static wifi_config_t *get_config(wifi_prov_ctx_t **ctx) {
+static wifi_config_t* get_config(wifi_prov_ctx_t **ctx) {
     return (*ctx ? &(*ctx)->wifi_cfg : NULL);
 }
 
-static wifi_config_t *new_config(wifi_prov_ctx_t **ctx) {
+static wifi_config_t* new_config(wifi_prov_ctx_t **ctx) {
     free(*ctx);
     (*ctx) = (wifi_prov_ctx_t *) calloc(1, sizeof(wifi_prov_ctx_t));
     return get_config(ctx);

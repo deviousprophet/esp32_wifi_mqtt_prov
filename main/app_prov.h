@@ -11,6 +11,7 @@
 
 #include <protocomm_security.h>
 #include <wifi_provisioning/wifi_config.h>
+#include <mqtt_client.h>
 
 /**
  * @brief   Get state of WiFi Station during provisioning

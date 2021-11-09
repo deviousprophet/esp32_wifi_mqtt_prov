@@ -17,13 +17,6 @@
 #include <esp_event.h>
 #include <esp_timer.h>
 
-// #ifdef CONFIG_BT_NIMBLE_ENABLED
-// #include "esp_nimble_hci.h"
-// #include "nimble/nimble_port.h"
-// #include "nimble/nimble_port_freertos.h"
-// #include "host/ble_hs.h"
-// #endif
-
 #include <protocomm.h>
 #include <protocomm_ble.h>
 #include <protocomm_security0.h>
@@ -33,7 +26,7 @@
 #include "app_prov.h"
 
 static const char *TAG = "app_prov";
-static const char *ssid_prefix = "PROV_";
+static const char *prov_prefix = "PROV_";
 
 /* Handler for catching WiFi events */
 static void app_prov_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* data);
@@ -60,8 +53,7 @@ struct app_prov_data {
 /* Pointer to provisioning application data */
 static struct app_prov_data *g_prov;
 
-static esp_err_t app_prov_start_service(void)
-{
+static esp_err_t app_prov_start_service(void) {
     /* Create new protocomm instance */
     g_prov->pc = protocomm_new();
     if (g_prov->pc == NULL) {
@@ -110,8 +102,13 @@ static esp_err_t app_prov_start_service(void)
 
     uint8_t eth_mac[6];
     esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
-    snprintf(config.device_name, sizeof(config.device_name), "%s%02X%02X%02X",
-             ssid_prefix, eth_mac[3], eth_mac[4], eth_mac[5]);
+    snprintf(
+        config.device_name,
+        sizeof(config.device_name),
+        "%s%02X%02X%02X%02X%02X%02X",
+        prov_prefix,
+        eth_mac[0], eth_mac[1], eth_mac[2], eth_mac[3], eth_mac[4], eth_mac[5]
+    );
 
     /* Release BT memory, as we need only BLE */
     esp_err_t err = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
@@ -151,8 +148,7 @@ static esp_err_t app_prov_start_service(void)
     return ESP_OK;
 }
 
-static void app_prov_stop_service(void)
-{
+static void app_prov_stop_service(void) {
     /* Remove provisioning endpoint */
     protocomm_remove_endpoint(g_prov->pc, "prov-config");
     /* Unset provisioning security */
@@ -173,8 +169,7 @@ static void app_prov_stop_service(void)
 }
 
 /* Task spawned by timer callback */
-static void stop_prov_task(void * arg)
-{
+static void stop_prov_task(void * arg) {
     ESP_LOGI(TAG, "Stopping provisioning");
     app_prov_stop_service();
 
@@ -192,15 +187,12 @@ static void stop_prov_task(void * arg)
 }
 
 /* Callback to be invoked by timer */
-static void _stop_prov_cb(void * arg)
-{
+static void _stop_prov_cb(void * arg) {
     xTaskCreate(&stop_prov_task, "stop_prov", 2048, NULL, tskIDLE_PRIORITY, NULL);
 }
 
 /* Event handler for starting/stopping provisioning */
-static void app_prov_event_handler(void* handler_arg, esp_event_base_t event_base,
-                                   int32_t event_id, void* event_data)
-{
+static void app_prov_event_handler(void* handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     /* If pointer to provisioning application data is NULL
      * then provisioning is not running */
     if (!g_prov) {
@@ -217,10 +209,10 @@ static void app_prov_event_handler(void* handler_arg, esp_event_base_t event_bas
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ESP_LOGI(TAG, "STA Got IP");
         /* Station got IP. That means configuration is successful.
-         * Schedule timer to stop provisioning app after 30 seconds. */
+         * Schedule timer to stop provisioning app after 10 seconds. */
         g_prov->wifi_state = WIFI_PROV_STA_CONNECTED;
         if (g_prov && g_prov->timer) {
-            esp_timer_start_once(g_prov->timer, 30000*1000U);
+            esp_timer_start_once(g_prov->timer, 10000*1000U);
         }
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGE(TAG, "STA Disconnected");
@@ -254,8 +246,7 @@ static void app_prov_event_handler(void* handler_arg, esp_event_base_t event_bas
     }
 }
 
-esp_err_t app_prov_get_wifi_state(wifi_prov_sta_state_t* state)
-{
+esp_err_t app_prov_get_wifi_state(wifi_prov_sta_state_t* state) {
     if (g_prov == NULL || state == NULL) {
         return ESP_FAIL;
     }
@@ -264,8 +255,7 @@ esp_err_t app_prov_get_wifi_state(wifi_prov_sta_state_t* state)
     return ESP_OK;
 }
 
-esp_err_t app_prov_get_wifi_disconnect_reason(wifi_prov_sta_fail_reason_t* reason)
-{
+esp_err_t app_prov_get_wifi_disconnect_reason(wifi_prov_sta_fail_reason_t* reason) {
     if (g_prov == NULL || reason == NULL) {
         return ESP_FAIL;
     }
@@ -278,8 +268,7 @@ esp_err_t app_prov_get_wifi_disconnect_reason(wifi_prov_sta_fail_reason_t* reaso
     return ESP_OK;
 }
 
-esp_err_t app_prov_is_provisioned(bool *provisioned)
-{
+esp_err_t app_prov_is_provisioned(bool *provisioned) {
     *provisioned = false;
 
 #ifdef CONFIG_EXAMPLE_RESET_PROVISIONED
@@ -301,8 +290,7 @@ esp_err_t app_prov_is_provisioned(bool *provisioned)
     return ESP_OK;
 }
 
-esp_err_t app_prov_configure_sta(wifi_config_t *wifi_cfg)
-{
+esp_err_t app_prov_configure_sta(wifi_config_t *wifi_cfg) {
     /* Configure WiFi as station */
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set WiFi mode");
@@ -332,8 +320,7 @@ esp_err_t app_prov_configure_sta(wifi_config_t *wifi_cfg)
     return ESP_OK;
 }
 
-esp_err_t app_prov_start_ble_provisioning(int security, const protocomm_security_pop_t *pop)
-{
+esp_err_t app_prov_start_ble_provisioning(int security, const protocomm_security_pop_t *pop) {
     /* If provisioning app data present,
      * means provisioning app is already running */
     if (g_prov) {

@@ -28,26 +28,22 @@ struct wifi_prov_ctx {
     wifi_config_t wifi_cfg;
 };
 
-static wifi_config_t *get_config(wifi_prov_ctx_t **ctx)
-{
+static wifi_config_t *get_config(wifi_prov_ctx_t **ctx) {
     return (*ctx ? &(*ctx)->wifi_cfg : NULL);
 }
 
-static wifi_config_t *new_config(wifi_prov_ctx_t **ctx)
-{
+static wifi_config_t *new_config(wifi_prov_ctx_t **ctx) {
     free(*ctx);
     (*ctx) = (wifi_prov_ctx_t *) calloc(1, sizeof(wifi_prov_ctx_t));
     return get_config(ctx);
 }
 
-static void free_config(wifi_prov_ctx_t **ctx)
-{
+static void free_config(wifi_prov_ctx_t **ctx) {
     free(*ctx);
     *ctx = NULL;
 }
 
-static esp_err_t get_status_handler(wifi_prov_config_get_data_t *resp_data, wifi_prov_ctx_t **ctx)
-{
+static esp_err_t get_status_handler(wifi_prov_config_get_data_t *resp_data, wifi_prov_ctx_t **ctx) {
     /* Initialize to zero */
     memset(resp_data, 0, sizeof(wifi_prov_config_get_data_t));
 
@@ -82,8 +78,7 @@ static esp_err_t get_status_handler(wifi_prov_config_get_data_t *resp_data, wifi
     return ESP_OK;
 }
 
-static esp_err_t set_config_handler(const wifi_prov_config_set_data_t *req_data, wifi_prov_ctx_t **ctx)
-{
+static esp_err_t set_config_handler(const wifi_prov_config_set_data_t *req_data, wifi_prov_ctx_t **ctx) {
     wifi_config_t *wifi_cfg = get_config(ctx);
     if (wifi_cfg) {
         free_config(ctx);
@@ -112,8 +107,7 @@ static esp_err_t set_config_handler(const wifi_prov_config_set_data_t *req_data,
     return ESP_OK;
 }
 
-static esp_err_t apply_config_handler(wifi_prov_ctx_t **ctx)
-{
+static esp_err_t apply_config_handler(wifi_prov_ctx_t **ctx) {
     wifi_config_t *wifi_cfg = get_config(ctx);
     if (!wifi_cfg) {
         ESP_LOGE(TAG, "WiFi config not set");

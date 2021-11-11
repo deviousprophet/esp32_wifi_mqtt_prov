@@ -12,7 +12,10 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/queue.h>
 #include <freertos/event_groups.h>
+
+#include <driver/gpio.h>
 
 #include <esp_log.h>
 #include <esp_wifi.h>
@@ -23,6 +26,9 @@
 #include <wifi_provisioning/scheme_ble.h>
 
 #include <mqtt_client.h>
+
+#define RESET_PROV_BUTTON_GPIO          21
+#define RESET_PROV_BUTTON_GPIO_MASK     (1ULL << RESET_PROV_BUTTON_GPIO)
 
 ESP_EVENT_DECLARE_BASE(MQTT_EVENTS);
 
@@ -39,6 +45,16 @@ static EventGroupHandle_t wifi_event_group;
 
 /* MQTT client handle */
 static esp_mqtt_client_handle_t mqtt_client;
+
+static void IRAM_ATTR gpio_isr_handler(void* arg) {
+    uint32_t gpio_num = (uint32_t) arg;
+    if (gpio_num == RESET_PROV_BUTTON_GPIO) {
+
+        /* Erase NVS Flash & reboot */
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        esp_restart();
+    }
+}
 
 /* Event handler for catching system events */
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
@@ -197,9 +213,27 @@ esp_err_t custom_prov_data_handler(uint32_t session_id, const uint8_t *inbuf, ss
     return ESP_OK;
 }
 
+void reset_provision_button_init(void) {
+    gpio_config_t btn_cfg = {
+        .intr_type = GPIO_INTR_POSEDGE,
+        .mode = GPIO_MODE_INPUT,
+        .pin_bit_mask = RESET_PROV_BUTTON_GPIO_MASK,
+        .pull_down_en = 0,
+        .pull_up_en = 1
+    };
+
+    /* Configure GPIO with the given settings */
+    gpio_config(&btn_cfg);
+
+    /* Install gpio isr service */
+    gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1);
+
+    /* Hook isr handler for specific gpio pin */
+    gpio_isr_handler_add(RESET_PROV_BUTTON_GPIO, gpio_isr_handler, (void*) RESET_PROV_BUTTON_GPIO);
+}
+
 void app_main(void) {
 
-    // ESP_ERROR_CHECK(nvs_flash_erase());
     ESP_ERROR_CHECK(nvs_flash_init());
 
     /* Initialize TCP/IP */
@@ -312,12 +346,9 @@ void app_main(void) {
         wifi_init_sta();
     }
 
-    // /* Wait for Wi-Fi connection */
-    // xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, false, true, portMAX_DELAY);
+    /* Wait for Wi-Fi connection */
+    xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, false, true, portMAX_DELAY);
 
-    // /* Start main application now */
-    // while (1) {
-    //     ESP_LOGI(TAG, "Hello World!");
-    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    // }
+    /* Enable reset button */
+    reset_provision_button_init();
 }

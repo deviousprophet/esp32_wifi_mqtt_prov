@@ -27,6 +27,10 @@
 
 #include <mqtt_client.h>
 
+#include "device.h"
+
+#define PROV_MAX_RETRY                  3
+
 #define RESET_PROV_BUTTON_GPIO          21
 #define RESET_PROV_BUTTON_GPIO_MASK     (1ULL << RESET_PROV_BUTTON_GPIO)
 
@@ -83,7 +87,7 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
                          "Wi-Fi station authentication failed" : "Wi-Fi access-point not found");
 
                 retries++;
-                if (retries >= 5) {
+                if (retries >= PROV_MAX_RETRY) {
                     ESP_LOGI(TAG, "Failed to connect with provisioned AP, reseting provisioned credentials");
                     wifi_prov_mgr_reset_sm_state_on_failure();
                     retries = 0;
@@ -112,9 +116,6 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
         case WIFI_EVENT_STA_CONNECTED:
                 /* Signal main application to continue execution */
                 xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_EVENT);
-
-                /* Start MQTT Connection */
-                esp_mqtt_client_start(mqtt_client);
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
             ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
@@ -164,6 +165,9 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Connected with IP Address:" IPSTR, IP2STR(&event->ip_info.ip));
+
+        /* Start MQTT Connection */
+        esp_mqtt_client_start(mqtt_client);
     }
 }
 
@@ -351,4 +355,9 @@ void app_main(void) {
 
     /* Enable reset button */
     reset_provision_button_init();
+
+    device_init("test");
+
+    device_add_channel("channel 1", CHANNEL_DATA_BOOL);
+    device_add_channel("channel 2", CHANNEL_DATA_INT);
 }

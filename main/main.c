@@ -370,5 +370,14 @@ void app_main(void) {
     ESP_LOGI(TAG, "Start application here");
 
     device_init("test");
-    device_add_channel("123", 123, CHANNEL_DATA_BOOL, CONTROL_ONLY);
+    device_add_channel("123", 1, CHANNEL_DATA_BOOL, CONTROL_ONLY);
+    device_add_channel("test", 2, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
+    device_add_channel("test2", 3, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
+    device_add_channel("test3", 4, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
+    device_add_channel("test4", 5, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
+
+    device_remove_channel(2);
+    device_remove_channel(1);
+
+    device_get_mqtt_provision_json_data();
 }

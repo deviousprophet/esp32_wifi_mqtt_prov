@@ -29,8 +29,8 @@ typedef struct device_channel_t {
 } device_channel_t;
 
 typedef struct {
-    char* device_name;
-    char* device_id;
+    char* name;
+    char* id;
     device_channel_t* channels;
 } device_t;
 

@@ -22,16 +22,6 @@ static void get_device_id(char* id) {
     );
 }
 
-static void print_list(void) {
-    device_channel_t* temp = g_device.channels;
-
-    printf("channels list\n");
-    while(temp != NULL) {
-        printf("%s %d %d %d\n", temp->name, temp->id, temp->type, temp->role);
-        temp = temp->next;
-    }
-}
-
 static void _add_channel(device_channel_t** channel_ref, const char* channel_name, int channel_id,
                             channel_data_type_t type, channel_data_role_t role) {
 
@@ -118,12 +108,10 @@ void device_init(const char* device_name) {
 
 void device_add_channel(const char* channel_name, int channel_id, channel_data_type_t type, channel_data_role_t role) {
     _add_channel(&g_device.channels, channel_name, channel_id, type, role);
-    print_list();
 }
 
 void device_remove_channel(int channel_id) {
     _remove_channel(&g_device.channels, channel_id);
-    print_list();
 }
 
 char* device_get_mqtt_provision_json_data(void) {
@@ -164,5 +152,5 @@ char* device_get_mqtt_provision_json_data(void) {
 }
 
 char* device_get_mqtt_monitor_json_data(void) {
-    
+
 }

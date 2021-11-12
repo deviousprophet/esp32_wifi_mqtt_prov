@@ -1,4 +1,3 @@
-
 /* Channel data type */
 typedef enum {
     CHANNEL_DATA_BOOL,
@@ -7,40 +6,44 @@ typedef enum {
     CHANNEL_DATA_STRING,
 } channel_data_type_t;
 
-/* Deivce channel structure */
-typedef struct device_channel_t {
-    
-    struct device_channel_t* next;
-    
-    char* name;
-    
-    uint8_t id;
+typedef enum {
+    MONITOR_ONLY,
+    CONTROL_ONLY,
+    MONITOR_AND_CONTROL
+} channel_data_role_t;
 
-    channel_data_type_t data_type;
+typedef struct device_channel_t {
+    struct device_channel_t* next;
+    char* name;
+    int id;
+    channel_data_type_t type;
+    channel_data_role_t role;
 
     union {
         bool bool_val;
         int int_val;
         float float_val;
-        char str_val[20];
+        char* str_val;
     } data_value;
 
-    char* unit;
 } device_channel_t;
 
-/* Device structure */
 typedef struct {
-    
     char* device_name;
-    
     char* device_id;
-    
     device_channel_t* channels;
-
 } device_t;
 
-void device_init(const char* name);
+void device_is_mqtt_provisioned(bool* provisioned);
 
-void device_add_channel(const char* name, channel_data_type_t type);
+void device_set_provisioned(void);
 
-void device_get_mqtt_provision_data(char* output_buf);
+void device_init(const char* device_name);
+
+void device_add_channel(const char* channel_name, int channel_id, channel_data_type_t type, channel_data_role_t role);
+
+void device_remove_channel(int channel_id);
+
+char* device_get_mqtt_provision_json_data(void);
+
+char* device_get_mqtt_monitor_json_data(void);

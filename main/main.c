@@ -1,12 +1,3 @@
-/* Wi-Fi Provisioning Manager Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <stdio.h>
 #include <string.h>
 
@@ -21,6 +12,7 @@
 #include <esp_wifi.h>
 #include <esp_event.h>
 #include <nvs_flash.h>
+#include <esp_system.h>
 
 #include <wifi_provisioning/manager.h>
 #include <wifi_provisioning/scheme_ble.h>
@@ -43,9 +35,8 @@ ESP_EVENT_DECLARE_BASE(MQTT_EVENTS);
 
 static const char *TAG = "app";
 
-/* Signal Wi-Fi events on this event-group */
-const int WIFI_CONNECTED_EVENT = BIT0;
-static EventGroupHandle_t wifi_event_group;
+const int MQTT_CONNECTED_EVENT = BIT0;
+static EventGroupHandle_t mqtt_event_group;
 
 /* MQTT client handle */
 static esp_mqtt_client_handle_t mqtt_client;
@@ -63,7 +54,8 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
 /* Event handler for catching system events */
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
 
-    static int retries;
+    static int retries_prov;
+    // static int retries_mqtt;
 
     /* WiFi Provision Event */
     if (event_base == WIFI_PROV_EVENT) {
@@ -86,17 +78,17 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
                          (*reason == WIFI_PROV_STA_AUTH_ERROR) ?
                          "Wi-Fi station authentication failed" : "Wi-Fi access-point not found");
 
-                retries++;
-                if (retries >= PROV_MAX_RETRY) {
+                retries_prov++;
+                if (retries_prov >= PROV_MAX_RETRY) {
                     ESP_LOGI(TAG, "Failed to connect with provisioned AP, reseting provisioned credentials");
                     wifi_prov_mgr_reset_sm_state_on_failure();
-                    retries = 0;
+                    retries_prov = 0;
                 }
                 break;
             }
             case WIFI_PROV_CRED_SUCCESS:
                 ESP_LOGI(TAG, "Provisioning successful");
-                retries = 0;
+                retries_prov = 0;
                 break;
             case WIFI_PROV_END:
                 /* De-initialize manager once provisioning is finished */
@@ -114,8 +106,7 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
             esp_wifi_connect();
             break;
         case WIFI_EVENT_STA_CONNECTED:
-                /* Signal main application to continue execution */
-                xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_EVENT);
+            ESP_LOGI(TAG, "Wifi STA Connected");
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
             ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
@@ -134,12 +125,19 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
             esp_mqtt_client_subscribe(client, MQTT_SERVER_TOPIC, 0);
+            // retries_mqtt = 0;
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+            // retries_mqtt++;
+            // if (retries_mqtt >= 3) {
+            //     retries_mqtt = 0;
+            //     esp_restart();
+            // }
             break;
         case MQTT_EVENT_SUBSCRIBED:
             ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED");
+            xEventGroupSetBits(mqtt_event_group, MQTT_CONNECTED_EVENT);
             break;
         case MQTT_EVENT_UNSUBSCRIBED:
             ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED");
@@ -245,7 +243,7 @@ void app_main(void) {
 
     /* Initialize the event loop */
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_event_group = xEventGroupCreate();
+    mqtt_event_group = xEventGroupCreate();
 
     /* Register our event handler for Wi-Fi, IP and Provisioning related events */
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
@@ -259,6 +257,9 @@ void app_main(void) {
 
     /* MQTT Client Initialize */
     mqtt_client_init();
+
+    /* Enable reset button */
+    reset_provision_button_init();
 
     /* Configuration for the provisioning manager */
     wifi_prov_mgr_config_t config = {
@@ -350,14 +351,24 @@ void app_main(void) {
         wifi_init_sta();
     }
 
-    /* Wait for Wi-Fi connection */
-    xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, false, true, portMAX_DELAY);
+    /* Wait for MQTT connection */
+    xEventGroupWaitBits(mqtt_event_group, MQTT_CONNECTED_EVENT, false, true, portMAX_DELAY);
 
-    /* Enable reset button */
-    reset_provision_button_init();
+    // bool mqtt_provisioned;
+    // device_is_mqtt_provisioned(&mqtt_provisioned);
+
+    // if (mqtt_provisioned) {
+    //     ESP_LOGI(TAG, "Already provisioned (MQTT)");
+    // } else {
+    //     // char* mqtt_prov_data = device_get_mqtt_provision_json_data();
+    //     // esp_mqtt_client_publish(mqtt_client, MQTT_SERVER_TOPIC, mqtt_prov_data, strlen(mqtt_prov_data), 0, 0);
+    //     // device_set_provisioned();
+
+    // }
+
+    /* Start application here */
+    ESP_LOGI(TAG, "Start application here");
 
     device_init("test");
-
-    device_add_channel("channel 1", CHANNEL_DATA_BOOL);
-    device_add_channel("channel 2", CHANNEL_DATA_INT);
+    device_add_channel("123", 123, CHANNEL_DATA_BOOL, CONTROL_ONLY);
 }

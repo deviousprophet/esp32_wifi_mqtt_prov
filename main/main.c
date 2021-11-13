@@ -43,6 +43,8 @@ static esp_mqtt_client_handle_t mqtt_client;
 
 static void mqtt_data_handle(char* topic, char* data);
 
+static void device_specific_init(void);
+
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
     uint32_t gpio_num = (uint32_t) arg;
     if (gpio_num == RESET_PROV_BUTTON_GPIO) {
@@ -242,15 +244,6 @@ void reset_provision_button_init(void) {
     gpio_isr_handler_add(RESET_PROV_BUTTON_GPIO, gpio_isr_handler, (void*) RESET_PROV_BUTTON_GPIO);
 }
 
-void device_specific_init(void) {
-    
-    device_init("device");
-    device_add_channel("123", 1, CHANNEL_DATA_BOOL, CONTROL_ONLY);
-    device_add_channel("test", 2, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
-    device_add_channel("string", 3, CHANNEL_DATA_STRING, MONITOR_ONLY);
-
-}
-
 void app_main(void) {
 
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -387,7 +380,20 @@ void app_main(void) {
     }
 
     /* Start application here */
+
+}
+
+void device_specific_init(void) {
+
+    /* Example of device specific data */
     
+    device_init("device");
+    device_add_channel("123", 1, CHANNEL_DATA_BOOL, CONTROL_ONLY);
+    device_add_channel("test", 2, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
+    device_add_channel("string", 3, CHANNEL_DATA_STRING, MONITOR_ONLY);
+    device_add_channel("voltage", 4, CHANNEL_DATA_FLOAT, MONITOR_ONLY);
+
+    device_remove_channel(2);
 }
 
 void mqtt_data_handle(char* topic, char* data) {

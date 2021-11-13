@@ -41,6 +41,8 @@ static EventGroupHandle_t mqtt_event_group;
 /* MQTT client handle */
 static esp_mqtt_client_handle_t mqtt_client;
 
+static void mqtt_data_handle(char* topic, char* data);
+
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
     uint32_t gpio_num = (uint32_t) arg;
     if (gpio_num == RESET_PROV_BUTTON_GPIO) {
@@ -55,7 +57,6 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
 
     static int retries_prov;
-    // static int retries_mqtt;
 
     /* WiFi Provision Event */
     if (event_base == WIFI_PROV_EVENT) {
@@ -125,15 +126,9 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
             esp_mqtt_client_subscribe(client, MQTT_SERVER_TOPIC, 0);
-            // retries_mqtt = 0;
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-            // retries_mqtt++;
-            // if (retries_mqtt >= 3) {
-            //     retries_mqtt = 0;
-            //     esp_restart();
-            // }
             break;
         case MQTT_EVENT_SUBSCRIBED:
             ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED");
@@ -145,11 +140,24 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
         case MQTT_EVENT_PUBLISHED:
             ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED");
             break;
-        case MQTT_EVENT_DATA:
+        case MQTT_EVENT_DATA: {
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-            printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-            printf("DATA=%.*s\r\n", event->data_len, event->data);
+            
+            /* Allocate memory for data */
+            char* topic = malloc(event->topic_len + 1);
+            char* data = malloc(event->data_len + 1);
+
+            sprintf(topic, "%.*s", event->topic_len, event->topic);
+            sprintf(data, "%.*s", event->data_len, event->data);
+            
+            /* Handle received data */
+            mqtt_data_handle(topic, data);
+
+            /* Free memory after handling data */
+            free(topic);
+            free(data);
             break;
+        }
         case MQTT_EVENT_ERROR:
             ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
             break;
@@ -232,6 +240,15 @@ void reset_provision_button_init(void) {
 
     /* Hook isr handler for specific gpio pin */
     gpio_isr_handler_add(RESET_PROV_BUTTON_GPIO, gpio_isr_handler, (void*) RESET_PROV_BUTTON_GPIO);
+}
+
+void device_specific_init(void) {
+    
+    device_init("device");
+    device_add_channel("123", 1, CHANNEL_DATA_BOOL, CONTROL_ONLY);
+    device_add_channel("test", 2, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
+    device_add_channel("string", 3, CHANNEL_DATA_STRING, MONITOR_ONLY);
+
 }
 
 void app_main(void) {
@@ -354,30 +371,28 @@ void app_main(void) {
     /* Wait for MQTT connection */
     xEventGroupWaitBits(mqtt_event_group, MQTT_CONNECTED_EVENT, false, true, portMAX_DELAY);
 
-    // bool mqtt_provisioned;
-    // device_is_mqtt_provisioned(&mqtt_provisioned);
+    device_specific_init();
 
-    // if (mqtt_provisioned) {
-    //     ESP_LOGI(TAG, "Already provisioned (MQTT)");
-    // } else {
-    //     // char* mqtt_prov_data = device_get_mqtt_provision_json_data();
-    //     // esp_mqtt_client_publish(mqtt_client, MQTT_SERVER_TOPIC, mqtt_prov_data, strlen(mqtt_prov_data), 0, 0);
-    //     // device_set_provisioned();
+    bool mqtt_provisioned;
+    device_is_mqtt_provisioned(&mqtt_provisioned);
 
-    // }
+    if (mqtt_provisioned) {
+        ESP_LOGI(TAG, "Already provisioned (MQTT)");
+    } else {
+        ESP_LOGI(TAG, "Starting provisioning (MQTT)");
+        char* mqtt_prov_data = device_get_mqtt_provision_json_data();
+        esp_mqtt_client_publish(mqtt_client, MQTT_SERVER_TOPIC, mqtt_prov_data, 0, 2, 0);
+
+        // device_set_provisioned();
+    }
 
     /* Start application here */
-    ESP_LOGI(TAG, "Start application here");
+    
+}
 
-    device_init("test");
-    device_add_channel("123", 1, CHANNEL_DATA_BOOL, CONTROL_ONLY);
-    device_add_channel("test", 2, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
-    device_add_channel("test2", 3, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
-    device_add_channel("test3", 4, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
-    device_add_channel("test4", 5, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
+void mqtt_data_handle(char* topic, char* data) {
+    ESP_LOGI(TAG, "Data received from topic %s: %s", topic, data);
 
-    device_remove_channel(2);
-    device_remove_channel(1);
+    /* Received data handle */
 
-    device_get_mqtt_provision_json_data();
 }

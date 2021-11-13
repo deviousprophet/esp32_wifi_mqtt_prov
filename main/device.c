@@ -103,7 +103,7 @@ void device_init(const char* device_name) {
         g_device.channels = NULL;
     }
 
-    ESP_LOGI(TAG, "Device created with name \"%s\" and id \"%s\"", g_device.name, g_device.id);
+    ESP_LOGI(TAG, "Device created with name & id: %s - %s", g_device.name, g_device.id);
 }
 
 void device_add_channel(const char* channel_name, int channel_id, channel_data_type_t type, channel_data_role_t role) {
@@ -149,8 +149,4 @@ char* device_get_mqtt_provision_json_data(void) {
     
     cJSON_Delete(device);
     return output_buf;
-}
-
-char* device_get_mqtt_monitor_json_data(void) {
-
 }

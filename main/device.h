@@ -45,5 +45,3 @@ void device_add_channel(const char* channel_name, int channel_id, channel_data_t
 void device_remove_channel(int channel_id);
 
 char* device_get_mqtt_provision_json_data(void);
-
-char* device_get_mqtt_monitor_json_data(void);

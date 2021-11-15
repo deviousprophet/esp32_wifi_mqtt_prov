@@ -49,6 +49,7 @@ static void _remove_channel(device_channel_t** channel_ref, int channel_id) {
     
     if (temp != NULL && temp->id == channel_id) {
         *channel_ref = temp->next;
+        free(temp->name);
         free(temp);
         return;
     }

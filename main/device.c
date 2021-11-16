@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <cJSON.h>
@@ -12,6 +13,37 @@ static device_t g_device;
 
 static const char* TAG = "device";
 
+void print_device(void) {
+    device_channel_t* temp = g_device.channels;
+
+    while (temp != NULL) {
+
+        printf("channel name: %s\n", temp->name);
+        printf("command: %d\n", temp->cmd);
+        printf("type: %d\n", temp->type);
+        
+        if(temp->type == CHANNEL_TYPE_NUMBER) {
+            printf(
+                "max: %.2f min: %.2f multipleof: %.2f\n",
+                temp->max,
+                temp->min,
+                temp->multipleof
+            );
+        } else if (temp->type == CHANNEL_TYPE_MULTI_OPTS) {
+            printf("options:\n");
+            // while (temp->options_list != NULL) {
+            //     printf("    %s\n", temp->options_list->opt);
+            //     temp->options_list = temp->options_list->next;
+            // }
+        }
+        
+        temp = temp->next;
+        printf("\n");
+    }
+
+    printf("\n----------------------------------------\n");
+}
+
 static void get_device_id(char* id) {
     uint8_t eth_mac[6];
     esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
@@ -22,68 +54,48 @@ static void get_device_id(char* id) {
     );
 }
 
-static void _add_channel(device_channel_t** channel_ref, const char* channel_name, int channel_id,
-                            channel_data_type_t type, channel_data_role_t role) {
+// static void _remove_channel(device_channel_t** channel_ref, int channel_id) {
 
-    device_channel_t* new_channel = (device_channel_t*) malloc(sizeof(device_channel_t));
-
-    new_channel->name = malloc(sizeof(channel_name) + 1);
-    strcpy(new_channel->name, channel_name);
-
-    new_channel->id = channel_id;
+//     device_channel_t* temp = *channel_ref;
+//     device_channel_t* prev = NULL;
     
-    new_channel->type = type;
-    
-    new_channel->role = role;
-    
-    new_channel->next = *channel_ref;
-    
-    *channel_ref = new_channel;
-
-}
-
-static void _remove_channel(device_channel_t** channel_ref, int channel_id) {
-
-    device_channel_t* temp = *channel_ref;
-    device_channel_t* prev = NULL;
-    
-    if (temp != NULL && temp->id == channel_id) {
-        *channel_ref = temp->next;
-        free(temp->name);
-        free(temp);
-        return;
-    }
+//     if (temp != NULL && temp->id == channel_id) {
+//         *channel_ref = temp->next;
+//         free(temp->name);
+//         free(temp);
+//         return;
+//     }
 
     
-    while (temp != NULL && temp->id != channel_id) {
-        prev = temp;
-        temp = temp->next;
-    }
+//     while (temp != NULL && temp->id != channel_id) {
+//         prev = temp;
+//         temp = temp->next;
+//     }
  
-    if (temp == NULL)
-        return;
+//     if (temp == NULL)
+//         return;
  
-    prev->next = temp->next;
+//     prev->next = temp->next;
  
-    free(temp);
-}
+//     free(temp);
+// }
 
 void device_is_mqtt_provisioned(bool* provisioned) {
 
     nvs_handle_t mqtt_prov_handle;
-    uint8_t prov_state;
+    uint16_t prov_state;
     *provisioned = false;
     
-    nvs_open("storage", NVS_READWRITE, &mqtt_prov_handle);
-    nvs_get_u8(mqtt_prov_handle, "mqtt_prov", &prov_state);    
-    if (!prov_state) *provisioned = true;
+    nvs_open("storage", NVS_READONLY, &mqtt_prov_handle);
+    nvs_get_u16(mqtt_prov_handle, "mqtt_prov", &prov_state);    
+    if (prov_state == 0xABCD) *provisioned = true;
     nvs_close(mqtt_prov_handle);
 }
 
 void device_set_provisioned(void) {
     nvs_handle_t mqtt_prov_handle;
     nvs_open("storage", NVS_READWRITE, &mqtt_prov_handle);
-    nvs_set_u8(mqtt_prov_handle, "mqtt_prov", 0x00);
+    nvs_set_u16(mqtt_prov_handle, "mqtt_prov", 0xABCD);
     nvs_close(mqtt_prov_handle);
 }
 
@@ -104,50 +116,106 @@ void device_init(const char* device_name) {
         g_device.channels = NULL;
     }
 
-    ESP_LOGI(TAG, "Device created with name & id: %s - %s", g_device.name, g_device.id);
+    ESP_LOGI(TAG, "Device structure is created with:\n            name: %s\n            id: %s", g_device.name, g_device.id);
 }
 
-void device_add_channel(const char* channel_name, int channel_id, channel_data_type_t type, channel_data_role_t role) {
-    _add_channel(&g_device.channels, channel_name, channel_id, type, role);
-}
-
-void device_remove_channel(int channel_id) {
-    _remove_channel(&g_device.channels, channel_id);
-}
-
-char* device_get_mqtt_provision_json_data(void) {
-
-    cJSON* device = cJSON_CreateObject();
+void device_add_bool_channel(const char* name, bool cmd) {
     
-    /* Device name */
-    cJSON_AddStringToObject(device, "device_name", g_device.name);
+    device_channel_t* new_channel = (device_channel_t*) malloc(sizeof(device_channel_t));
     
-    /* Device ID - MAC address */
-    cJSON_AddStringToObject(device, "device_id", g_device.id);
+    new_channel->name = malloc(sizeof(name) + 1);
+    strcpy(new_channel->name, name);
 
-    /* Device Channels */
-    cJSON* channels = cJSON_AddArrayToObject(device, "channels");
-    device_channel_t* temp = g_device.channels;
-    while (temp != NULL) {
-        cJSON* new_channel = cJSON_CreateObject();
+    new_channel->cmd = cmd;
+    new_channel->type = CHANNEL_TYPE_BOOL;
 
-        cJSON_AddStringToObject(new_channel, "channel_name", temp->name);
+    new_channel->next = g_device.channels;
+    g_device.channels = new_channel;
 
-        cJSON_AddNumberToObject(new_channel, "channel_id", temp->id);
+    print_device();
+}
 
-        cJSON_AddNumberToObject(new_channel, "type", temp->type);
+void device_add_nummber_channel(const char* name, bool cmd, const char* title,
+                    const char* description, float min, float max, float multipleof) {
+    
+    device_channel_t* new_channel = (device_channel_t*) malloc(sizeof(device_channel_t));
+    
+    new_channel->name = malloc(sizeof(name) + 1);
+    strcpy(new_channel->name, name);
 
-        cJSON_AddNumberToObject(new_channel, "role", temp->role);
+    new_channel->cmd = cmd;
+    new_channel->type = CHANNEL_TYPE_NUMBER;
+    new_channel->min = min;
+    new_channel->max = max;
+    new_channel->multipleof = multipleof;
 
-        cJSON_AddItemToArray(channels, new_channel);
+    new_channel->next = g_device.channels;
+    g_device.channels = new_channel;
 
-        temp = temp->next;
+    print_device();
+}
+
+void device_add_string_channel(const char* name, bool cmd, const char* title,
+                    const char* description) {
+
+}
+
+void device_add_multi_option_channel(const char* name, bool cmd, const char* title,
+                    const char* description, uint8_t opt_count, char** opts) {
+
+    device_channel_t* new_channel = (device_channel_t*) malloc(sizeof(device_channel_t));
+    
+    new_channel->name = malloc(sizeof(name) + 1);
+    strcpy(new_channel->name, name);
+
+    new_channel->cmd = cmd;
+    new_channel->type = CHANNEL_TYPE_MULTI_OPTS;
+
+    for(int i = 0; i < opt_count; i++) {
+        printf("%s\n", opts[i]);
     }
 
-    char* output_buf = cJSON_PrintUnformatted(device);
+    new_channel->next = g_device.channels;
+    g_device.channels = new_channel;
 
-    ESP_LOGI(TAG, "Device Provision JSON data:\n%s", cJSON_Print(device));
-    
-    cJSON_Delete(device);
-    return output_buf;
+    print_device();
 }
+
+void device_remove_channel(const char* name) {
+
+}
+
+// char* device_get_mqtt_provision_json_data(void) {
+
+//     // cJSON* device = cJSON_CreateObject();
+    
+//     // /* Device name */
+//     // cJSON_AddStringToObject(device, "device_name", g_device.name);
+    
+//     // /* Device ID - MAC address */
+//     // cJSON_AddStringToObject(device, "device_id", g_device.id);
+
+//     // /* Device Channels */
+//     // cJSON* channels = cJSON_AddArrayToObject(device, "channels");
+//     // device_channel_t* temp = g_device.channels;
+//     // while (temp != NULL) {
+//     //     cJSON* new_channel = cJSON_CreateObject();
+
+//     //     cJSON_AddStringToObject(new_channel, "channel_name", temp->name);
+
+//     //     cJSON_AddNumberToObject(new_channel, "channel_id", temp->id);
+
+//     //     cJSON_AddNumberToObject(new_channel, "type", temp->type);
+
+//     //     cJSON_AddItemToArray(channels, new_channel);
+
+//     //     temp = temp->next;
+//     // }
+
+//     // char* output_buf = cJSON_PrintUnformatted(device);
+
+//     // ESP_LOGI(TAG, "Device Provision JSON data:\n%s", cJSON_Print(device));
+    
+//     // cJSON_Delete(device);
+//     // return output_buf;
+// }

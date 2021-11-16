@@ -373,8 +373,8 @@ void app_main(void) {
         ESP_LOGI(TAG, "Already provisioned (MQTT)");
     } else {
         ESP_LOGI(TAG, "Starting provisioning (MQTT)");
-        char* mqtt_prov_data = device_get_mqtt_provision_json_data();
-        esp_mqtt_client_publish(mqtt_client, MQTT_SERVER_TOPIC, mqtt_prov_data, 0, 2, 0);
+        // char* mqtt_prov_data = device_get_mqtt_provision_json_data();
+        // esp_mqtt_client_publish(mqtt_client, MQTT_SERVER_TOPIC, mqtt_prov_data, 0, 2, 0);
 
         // device_set_provisioned();
     }
@@ -388,12 +388,21 @@ void device_specific_init(void) {
     /* Example of device specific data */
     
     device_init("device");
-    device_add_channel("123", 1, CHANNEL_DATA_BOOL, CONTROL_ONLY);
-    device_add_channel("test", 2, CHANNEL_DATA_INT, MONITOR_AND_CONTROL);
-    device_add_channel("string", 3, CHANNEL_DATA_STRING, MONITOR_ONLY);
-    device_add_channel("voltage", 4, CHANNEL_DATA_FLOAT, MONITOR_ONLY);
+    
+    device_add_bool_channel("relay1", true);
+    device_add_bool_channel("relay2", true);
+    device_add_nummber_channel("temp", true, "", "", 20, 30, 1);
 
-    device_remove_channel(2);
+    char* test[] = {"mode1", "mode2", "mode3"};
+
+    device_add_multi_option_channel(
+        "mode",
+        true,
+        "",
+        "",
+        3,
+        test
+    );
 }
 
 void mqtt_data_handle(char* topic, char* data) {

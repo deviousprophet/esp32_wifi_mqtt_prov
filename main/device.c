@@ -233,22 +233,35 @@ char* device_get_mqtt_provision_json_data(void) {
 
         cJSON* channel_temp = cJSON_AddObjectToObject(new_channel, temp->name);
 
-        cJSON_AddNumberToObject(channel_temp, "type", temp->type);
-
         cJSON_AddBoolToObject(channel_temp, "command", temp->cmd);
 
-        if (temp->type == CHANNEL_TYPE_NUMBER) {
+        switch (temp->type) {
+        case CHANNEL_TYPE_BOOL:
+            cJSON_AddStringToObject(channel_temp, "type", "bool");
+            break;
+        
+        case CHANNEL_TYPE_NUMBER:
+            cJSON_AddStringToObject(channel_temp, "type", "number");
             cJSON_AddNumberToObject(channel_temp, "min", temp->prov_data.num_prov.min);
             cJSON_AddNumberToObject(channel_temp, "max", temp->prov_data.num_prov.max);
             cJSON_AddNumberToObject(channel_temp, "multipleof", temp->prov_data.num_prov.multipleof);
-        } else if (temp->type == CHANNEL_TYPE_CHOICE) {
-            cJSON* temp_options = cJSON_AddArrayToObject(channel_temp, "opts");
+            break;
+
+        case CHANNEL_TYPE_CHOICE: {
+            cJSON* temp_options = cJSON_AddArrayToObject(channel_temp, "enum");
             prov_opt_list_t* temp_opt = temp->prov_data.opts_prov;
 
             while (temp_opt != NULL) {
                 cJSON_AddItemToArray(temp_options, cJSON_CreateString(temp_opt->opt));
                 temp_opt = temp_opt->next;
             }
+            break;
+        }
+
+        case CHANNEL_TYPE_STRING:
+            break;
+        default:
+            break;
         }
 
         cJSON_AddItemToArray(channels, new_channel);

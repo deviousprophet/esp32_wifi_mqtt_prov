@@ -4,8 +4,8 @@
 typedef enum {
     CHANNEL_TYPE_BOOL,
     CHANNEL_TYPE_NUMBER,
-    CHANNEL_TYPE_STRING,
     CHANNEL_TYPE_CHOICE,
+    CHANNEL_TYPE_STRING,
 } channel_type_t;
 
 typedef struct prov_opt_list_t {

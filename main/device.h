@@ -1,10 +1,23 @@
+#pragma once
+
 /* Channel data type */
 typedef enum {
     CHANNEL_TYPE_BOOL,
     CHANNEL_TYPE_NUMBER,
     CHANNEL_TYPE_STRING,
-    CHANNEL_TYPE_MULTI_OPTS,
+    CHANNEL_TYPE_CHOICE,
 } channel_type_t;
+
+typedef struct prov_opt_list_t {
+    struct prov_opt_list_t* next;
+    char* opt;
+} prov_opt_list_t;
+
+typedef struct {
+    float min;
+    float max;
+    float multipleof;
+} prov_num_type_t;
 
 typedef struct device_channel_t {
     struct device_channel_t* next;
@@ -12,9 +25,10 @@ typedef struct device_channel_t {
     bool cmd;
     channel_type_t type;
 
-    float min;
-    float max;
-    float multipleof;
+    union {
+        prov_num_type_t num_prov;
+        prov_opt_list_t* opts_prov;
+    } prov_data;
 
     union {
         bool bool_val;
@@ -30,7 +44,8 @@ typedef struct {
     device_channel_t* channels;
 } device_t;
 
-
+/* Get device MAC address */
+const char* get_device_id(void);
 
 /* Check for MQTT provision status */
 void device_is_mqtt_provisioned(bool* provisioned);
@@ -40,12 +55,17 @@ void device_is_mqtt_provisioned(bool* provisioned);
 void device_set_provisioned(void);
 
 
+/* Check the provisioning response */
+bool device_check_prov_resp(char* resp);
+
+
 /* Create device structure */
 void device_init(const char* device_name);
 
 
 /* Add channel to device */
-void device_add_bool_channel(const char* name, bool cmd);
+void device_add_bool_channel(const char* name, bool cmd, const char* title,
+                    const char* description);
 
 void device_add_nummber_channel(const char* name, bool cmd, const char* title,
                     const char* description, float min, float max, float multipleof);
@@ -54,7 +74,7 @@ void device_add_string_channel(const char* name, bool cmd, const char* title,
                     const char* description);
 
 void device_add_multi_option_channel(const char* name, bool cmd, const char* title,
-                    const char* description, uint8_t opt_count, char** opts);
+                    const char* description, uint8_t opt_count, ...);
 
 
 /* Remove channel from device */
@@ -62,4 +82,10 @@ void device_remove_channel(const char* name);
 
 
 /* Get the JSON provisioning data */
-// char* device_get_mqtt_provision_json_data(void);
+char* device_get_mqtt_provision_json_data(void);
+
+
+/* Print device created channels */
+void print_device_channels(void);
+
+#define DEVICE_MAC_ADDR     (get_device_id())

@@ -28,22 +28,33 @@
 
 ESP_EVENT_DECLARE_BASE(MQTT_EVENTS);
 
+char* topic_add_level(const char* high_topic_level, const char* id) {
+    char* topic = malloc(strlen(high_topic_level) + strlen(id) + 1);
+    sprintf(topic, "%s%s", high_topic_level, id);
+    return topic;
+}
+
 // #define MQTT_SERVER_URL         "mqtt://tmt.smarthotel.io"
-#define MQTT_SERVER_URL         "mqtt://broker.hivemq.com"
-#define MQTT_SERVER_TOPIC       "test/device1"
-#define DEVICE_PUBLISH_TOPIC    ""
+// #define MQTT_SERVER_URL         "mqtt://broker.hivemq.com"
+#define MQTT_SERVER_URL         "mqtt://192.168.137.1"
+
+#define SERVER_PROV_TOPIC       ((const char*) topic_add_level("down/provision/", DEVICE_MAC_ADDR))
+#define DEVICE_PROV_TOPIC       ((const char*) topic_add_level("up/provision/", DEVICE_MAC_ADDR))
+
+#define SERVER_COMMAND_TOPIC    ((const char*) topic_add_level("down/command/", DEVICE_MAC_ADDR))
+#define DEVICE_DATA_TOPIC       ((const char*) topic_add_level("up/telemetry/", DEVICE_MAC_ADDR))
 
 static const char *TAG = "app";
 
-const int MQTT_CONNECTED_EVENT = BIT0;
-static EventGroupHandle_t mqtt_event_group;
+const int MQTT_CONNECTED_EVENT = BIT0, MQTT_PROV_EVENT = BIT0;
+static EventGroupHandle_t mqtt_event_group, mqtt_prov_event_group;
 
 /* MQTT client handle */
 static esp_mqtt_client_handle_t mqtt_client;
 
 static void mqtt_data_handle(char* topic, char* data);
 
-static void device_specific_init(void);
+static void device_specific_data_cfg(void);
 
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
     uint32_t gpio_num = (uint32_t) arg;
@@ -57,7 +68,7 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
 
 /* Event handler for catching system events */
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
-
+    
     static int retries_prov;
 
     /* WiFi Provision Event */
@@ -123,19 +134,20 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     /* MQTT Event */
     else if (event_base == MQTT_EVENTS) {
         esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t) event_data;
-        esp_mqtt_client_handle_t client = event->client;
+        // esp_mqtt_client_handle_t client = event->client;
         switch (event->event_id) {
-        case MQTT_EVENT_CONNECTED:
+        case MQTT_EVENT_CONNECTED: {
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-            esp_mqtt_client_subscribe(client, MQTT_SERVER_TOPIC, 0);
+            xEventGroupSetBits(mqtt_event_group, MQTT_CONNECTED_EVENT);
             break;
+        }
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
             break;
-        case MQTT_EVENT_SUBSCRIBED:
+        case MQTT_EVENT_SUBSCRIBED: {
             ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED");
-            xEventGroupSetBits(mqtt_event_group, MQTT_CONNECTED_EVENT);
             break;
+        }
         case MQTT_EVENT_UNSUBSCRIBED:
             ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED");
             break;
@@ -194,16 +206,8 @@ static void wifi_init_sta(void) {
 }
 
 static void get_device_service_name(char *service_name, size_t max) {
-    uint8_t eth_mac[6];
     const char *ssid_prefix = "PROV_";
-    esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
-    snprintf(
-        service_name,
-        max,
-        "%s%02X%02X%02X%02X%02X%02X",
-        ssid_prefix,
-        eth_mac[0], eth_mac[1], eth_mac[2], eth_mac[3], eth_mac[4], eth_mac[5]
-    );
+    snprintf(service_name, max, "%s%s", ssid_prefix, DEVICE_MAC_ADDR);
 }
 
 /* Handler for the optional provisioning endpoint registered by the application.
@@ -254,6 +258,7 @@ void app_main(void) {
     /* Initialize the event loop */
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     mqtt_event_group = xEventGroupCreate();
+    mqtt_prov_event_group = xEventGroupCreate();
 
     /* Register our event handler for Wi-Fi, IP and Provisioning related events */
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
@@ -270,6 +275,9 @@ void app_main(void) {
 
     /* Enable reset button */
     reset_provision_button_init();
+
+    /* Device specific data configuration */
+    device_specific_data_cfg();
 
     /* Configuration for the provisioning manager */
     wifi_prov_mgr_config_t config = {
@@ -364,8 +372,6 @@ void app_main(void) {
     /* Wait for MQTT connection */
     xEventGroupWaitBits(mqtt_event_group, MQTT_CONNECTED_EVENT, false, true, portMAX_DELAY);
 
-    device_specific_init();
-
     bool mqtt_provisioned;
     device_is_mqtt_provisioned(&mqtt_provisioned);
 
@@ -373,27 +379,34 @@ void app_main(void) {
         ESP_LOGI(TAG, "Already provisioned (MQTT)");
     } else {
         ESP_LOGI(TAG, "Starting provisioning (MQTT)");
-        // char* mqtt_prov_data = device_get_mqtt_provision_json_data();
-        // esp_mqtt_client_publish(mqtt_client, MQTT_SERVER_TOPIC, mqtt_prov_data, 0, 2, 0);
 
-        // device_set_provisioned();
+        ESP_LOGI(TAG, "Subscribing TOPIC: %s", SERVER_PROV_TOPIC);
+        esp_mqtt_client_subscribe(mqtt_client, SERVER_PROV_TOPIC, 0);
+
+        char* mqtt_prov_data = device_get_mqtt_provision_json_data();
+        esp_mqtt_client_publish(mqtt_client, DEVICE_PROV_TOPIC, mqtt_prov_data, 0, 2, 0);
+
+
+        xEventGroupWaitBits(mqtt_prov_event_group, MQTT_PROV_EVENT, false, true, portMAX_DELAY);
+        ESP_LOGI(TAG, "Unsubscribing TOPIC: %s", SERVER_PROV_TOPIC);
+        esp_mqtt_client_unsubscribe(mqtt_client, SERVER_PROV_TOPIC);
     }
 
-    /* Start application here */
+    ESP_LOGI(TAG, "Subscribing TOPIC: %s", SERVER_COMMAND_TOPIC);
+    esp_mqtt_client_subscribe(mqtt_client, SERVER_COMMAND_TOPIC, 0);
 
+    /* Start application here */
+    
 }
 
-void device_specific_init(void) {
+void device_specific_data_cfg(void) {
 
     /* Example of device specific data */
     
-    device_init("device");
+    device_init("air conditioner");
     
-    device_add_bool_channel("relay1", true);
-    device_add_bool_channel("relay2", true);
+    device_add_bool_channel("power", true, "", "");
     device_add_nummber_channel("temp", true, "", "", 20, 30, 1);
-
-    char* test[] = {"mode1", "mode2", "mode3"};
 
     device_add_multi_option_channel(
         "mode",
@@ -401,7 +414,18 @@ void device_specific_init(void) {
         "",
         "",
         3,
-        test
+        "mode1", "mode2", "mode3"
+    );
+
+    device_remove_channel("relay1");
+
+    device_add_multi_option_channel(
+        "fan_mode",
+        true,
+        "",
+        "",
+        2,
+        "mode1", "mode2"
     );
 }
 
@@ -410,4 +434,13 @@ void mqtt_data_handle(char* topic, char* data) {
 
     /* Received data handle */
 
+    if (strcmp(topic, SERVER_PROV_TOPIC) == 0) {
+        if (device_check_prov_resp(data)) {
+            ESP_LOGI(TAG, "Device is provisioned");
+            device_set_provisioned();
+            xEventGroupSetBits(mqtt_prov_event_group, MQTT_PROV_EVENT);
+        } else {
+            ESP_LOGI(TAG, "Unknown data");
+        }
+    }
 }

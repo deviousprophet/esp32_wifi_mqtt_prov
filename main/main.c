@@ -405,6 +405,7 @@ void device_specific_data_cfg(void) {
     
     device_init("air conditioner");
     
+    device_add_bool_channel("relay01", true, "", "");
     device_add_bool_channel("power", true, "", "");
     device_add_nummber_channel("temp", true, "", "", 20, 30, 1);
 
@@ -417,16 +418,7 @@ void device_specific_data_cfg(void) {
         "mode1", "mode2", "mode3"
     );
 
-    device_remove_channel("relay1");
-
-    device_add_multi_option_channel(
-        "fan_mode",
-        true,
-        "",
-        "",
-        2,
-        "mode1", "mode2"
-    );
+    device_remove_channel("relay01");
 }
 
 void mqtt_data_handle(char* topic, char* data) {

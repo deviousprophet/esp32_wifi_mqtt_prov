@@ -107,16 +107,18 @@ void device_set_provisioned(void) {
 }
 
 bool device_check_prov_resp(char* resp) {
-
+    bool prov_status = false;
+    
     cJSON* prov_resp = cJSON_Parse(resp);
     cJSON* status = cJSON_GetObjectItem(prov_resp, "status");
     if (cJSON_IsNumber(status)) {
         ESP_LOGI(TAG, "MQTT provisioning response status: %d", (int) status->valuedouble);
         if (status->valuedouble == 1)
-            return true;
+            prov_status = true;
     }
 
-    return false;
+    cJSON_Delete(prov_resp);
+    return prov_status;
 }
 
 void device_init(const char* device_name) {

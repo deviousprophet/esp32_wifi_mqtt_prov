@@ -13,6 +13,7 @@
 #include <esp_event.h>
 #include <nvs_flash.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 
 #include <wifi_provisioning/manager.h>
 #include <wifi_provisioning/scheme_ble.h>
@@ -26,6 +27,9 @@
 #define RESET_PROV_BUTTON_GPIO          21
 #define RESET_PROV_BUTTON_GPIO_MASK     (1ULL << RESET_PROV_BUTTON_GPIO)
 
+#define INDICATOR_LED_GPIO              19
+#define INDICATOR_LED_GPIO_MASK         (1ULL << INDICATOR_LED_GPIO)
+
 ESP_EVENT_DECLARE_BASE(MQTT_EVENTS);
 
 char* topic_add_level(const char* high_topic_level, const char* id) {
@@ -36,7 +40,7 @@ char* topic_add_level(const char* high_topic_level, const char* id) {
 
 // #define MQTT_SERVER_URL         "mqtt://tmt.smarthotel.io"
 // #define MQTT_SERVER_URL         "mqtt://broker.hivemq.com"
-#define MQTT_SERVER_URL         "mqtt://192.168.137.1"
+#define MQTT_SERVER_URL         "mqtt://172.29.5.50"
 
 #define SERVER_PROV_TOPIC       ((const char*) topic_add_level("down/provision/", DEVICE_MAC_ADDR))
 #define DEVICE_PROV_TOPIC       ((const char*) topic_add_level("up/provision/", DEVICE_MAC_ADDR))
@@ -51,6 +55,9 @@ static EventGroupHandle_t mqtt_event_group, mqtt_prov_event_group;
 
 /* MQTT client handle */
 static esp_mqtt_client_handle_t mqtt_client;
+
+/* Indicator LED timer handle */
+esp_timer_handle_t indicator_led_timer;
 
 static void mqtt_data_handle(char* topic, char* data);
 
@@ -74,42 +81,42 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     /* WiFi Provision Event */
     if (event_base == WIFI_PROV_EVENT) {
         switch (event_id) {
-            case WIFI_PROV_START:
-                ESP_LOGI(TAG, "Provisioning started");
-                break;
-            case WIFI_PROV_CRED_RECV: {
-                wifi_sta_config_t *wifi_sta_cfg = (wifi_sta_config_t *)event_data;
-                ESP_LOGI(TAG, "Received Wi-Fi credentials"
-                         "\n\tSSID     : %s\n\tPassword : %s",
-                         (const char *) wifi_sta_cfg->ssid,
-                         (const char *) wifi_sta_cfg->password);
-                break;
-            }
-            case WIFI_PROV_CRED_FAIL: {
-                wifi_prov_sta_fail_reason_t *reason = (wifi_prov_sta_fail_reason_t *)event_data;
-                ESP_LOGE(TAG, "Provisioning failed!\n\tReason : %s"
-                         "\n\tPlease reset to factory and retry provisioning",
-                         (*reason == WIFI_PROV_STA_AUTH_ERROR) ?
-                         "Wi-Fi station authentication failed" : "Wi-Fi access-point not found");
+        case WIFI_PROV_START:
+            ESP_LOGI(TAG, "Provisioning started");
+            break;
+        case WIFI_PROV_CRED_RECV: {
+            wifi_sta_config_t *wifi_sta_cfg = (wifi_sta_config_t *)event_data;
+            ESP_LOGI(TAG, "Received Wi-Fi credentials"
+                        "\n\tSSID     : %s\n\tPassword : %s",
+                        (const char *) wifi_sta_cfg->ssid,
+                        (const char *) wifi_sta_cfg->password);
+            break;
+        }
+        case WIFI_PROV_CRED_FAIL: {
+            wifi_prov_sta_fail_reason_t *reason = (wifi_prov_sta_fail_reason_t *)event_data;
+            ESP_LOGE(TAG, "Provisioning failed!\n\tReason : %s"
+                        "\n\tPlease reset to factory and retry provisioning",
+                        (*reason == WIFI_PROV_STA_AUTH_ERROR) ?
+                        "Wi-Fi station authentication failed" : "Wi-Fi access-point not found");
 
-                retries_prov++;
-                if (retries_prov >= PROV_MAX_RETRY) {
-                    ESP_LOGI(TAG, "Failed to connect with provisioned AP, reseting provisioned credentials");
-                    wifi_prov_mgr_reset_sm_state_on_failure();
-                    retries_prov = 0;
-                }
-                break;
-            }
-            case WIFI_PROV_CRED_SUCCESS:
-                ESP_LOGI(TAG, "Provisioning successful");
+            retries_prov++;
+            if (retries_prov >= PROV_MAX_RETRY) {
+                ESP_LOGI(TAG, "Failed to connect with provisioned AP, reseting provisioned credentials");
+                wifi_prov_mgr_reset_sm_state_on_failure();
                 retries_prov = 0;
-                break;
-            case WIFI_PROV_END:
-                /* De-initialize manager once provisioning is finished */
-                wifi_prov_mgr_deinit();
-                break;
-            default:
-                break;
+            }
+            break;
+        }
+        case WIFI_PROV_CRED_SUCCESS:
+            ESP_LOGI(TAG, "Provisioning successful");
+            retries_prov = 0;
+            break;
+        case WIFI_PROV_END:
+            /* De-initialize manager once provisioning is finished */
+            wifi_prov_mgr_deinit();
+            break;
+        default:
+            break;
         }    
     }
 
@@ -248,6 +255,42 @@ void reset_provision_button_init(void) {
     gpio_isr_handler_add(RESET_PROV_BUTTON_GPIO, gpio_isr_handler, (void*) RESET_PROV_BUTTON_GPIO);
 }
 
+static void indicator_led_callback(void* arg) {
+    static uint8_t cnt = 0;
+    gpio_set_level(INDICATOR_LED_GPIO, (cnt++ % 2));
+}
+
+void indicator_led_start(void) {
+    gpio_config_t led_cfg = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = INDICATOR_LED_GPIO_MASK,
+        .pull_down_en = 0,
+        .pull_up_en = 0
+    };
+
+    gpio_config(&led_cfg);
+    
+    gpio_set_level(INDICATOR_LED_GPIO, 0);
+
+    const esp_timer_create_args_t indicator_led_timer_args = {
+        .callback = &indicator_led_callback,
+    };
+
+    ESP_ERROR_CHECK(esp_timer_create(&indicator_led_timer_args, &indicator_led_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(indicator_led_timer, 500000));
+
+    ESP_LOGI(TAG, "Indicator LED start blinking");
+}
+
+void indicator_led_on(void) {
+    ESP_ERROR_CHECK(esp_timer_stop(indicator_led_timer));
+    ESP_ERROR_CHECK(esp_timer_delete(indicator_led_timer));
+
+    gpio_set_level(INDICATOR_LED_GPIO, 1);
+    ESP_LOGI(TAG, "Indicator LED stay ON");
+}
+
 void app_main(void) {
 
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -289,12 +332,21 @@ void app_main(void) {
      * configuration parameters set above */
     ESP_ERROR_CHECK(wifi_prov_mgr_init(config));
 
-    bool provisioned = false;
+    bool wifi_provisioned = false;
     /* Let's find out if the device is provisioned */
-    ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&provisioned));
+    ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&wifi_provisioned));
+
+    bool mqtt_provisioned = false;
+    device_is_mqtt_provisioned(&mqtt_provisioned);
+
+    /* Indicator LED */
+    indicator_led_start();
+    if (wifi_provisioned && mqtt_provisioned)
+        indicator_led_on();
+
 
     /* If device is not yet provisioned start provisioning service */
-    if (!provisioned) {
+    if (!wifi_provisioned) {
         ESP_LOGI(TAG, "Starting provisioning");
 
         /* What is the Device Service Name that we want
@@ -372,11 +424,9 @@ void app_main(void) {
     /* Wait for MQTT connection */
     xEventGroupWaitBits(mqtt_event_group, MQTT_CONNECTED_EVENT, false, true, portMAX_DELAY);
 
-    bool mqtt_provisioned;
-    device_is_mqtt_provisioned(&mqtt_provisioned);
-
     if (mqtt_provisioned) {
         ESP_LOGI(TAG, "Already provisioned (MQTT)");
+        xEventGroupSetBits(mqtt_prov_event_group, MQTT_PROV_EVENT);
     } else {
         ESP_LOGI(TAG, "Starting provisioning (MQTT)");
 
@@ -396,6 +446,8 @@ void app_main(void) {
     esp_mqtt_client_subscribe(mqtt_client, SERVER_COMMAND_TOPIC, 0);
 
     /* Start application here */
+    
+    
     
 }
 
@@ -418,7 +470,15 @@ void device_specific_data_cfg(void) {
         "mode1", "mode2", "mode3"
     );
 
+    device_add_string_channel("info", false, "", "");
+
     device_remove_channel("relay01");
+
+    bool temp = false;
+    device_set_channel_value("power", &temp);
+
+    char* temp_str = "mode2";
+    device_set_channel_value("mode", &temp_str);
 }
 
 void mqtt_data_handle(char* topic, char* data) {
@@ -430,6 +490,7 @@ void mqtt_data_handle(char* topic, char* data) {
         if (device_check_prov_resp(data)) {
             ESP_LOGI(TAG, "Device is provisioned");
             device_set_provisioned();
+            indicator_led_on();
             xEventGroupSetBits(mqtt_prov_event_group, MQTT_PROV_EVENT);
         } else {
             ESP_LOGI(TAG, "Unknown data");

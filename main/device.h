@@ -70,15 +70,19 @@ void device_add_bool_channel(const char* name, bool cmd, const char* title,
 void device_add_nummber_channel(const char* name, bool cmd, const char* title,
                     const char* description, float min, float max, float multipleof);
 
-void device_add_string_channel(const char* name, bool cmd, const char* title,
-                    const char* description);
-
 void device_add_multi_option_channel(const char* name, bool cmd, const char* title,
                     const char* description, uint8_t opt_count, ...);
+
+void device_add_string_channel(const char* name, bool cmd, const char* title,
+                    const char* description);
 
 
 /* Remove channel from device */
 void device_remove_channel(const char* name);
+
+
+/* Set channel value */
+void device_set_channel_value(const char* name, void* value);
 
 
 /* Get the JSON provisioning data */

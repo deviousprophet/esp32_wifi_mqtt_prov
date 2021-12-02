@@ -23,17 +23,35 @@ void print_device_channels(void) {
         printf("        type: %d\n", temp->type);
         printf("         cmd: %d\n", temp->cmd);
         
-        if (temp->type == CHANNEL_TYPE_NUMBER) {
+        switch (temp->type) {
+        case CHANNEL_TYPE_BOOL:
+            printf("       value: %s\n", (temp->data_value.bool_val) ? "true" : "false");
+            break;
+
+        case CHANNEL_TYPE_NUMBER:
             printf("         min: %.2f\n", temp->prov_data.num_prov.min);
             printf("         max: %.2f\n", temp->prov_data.num_prov.max);
-            printf("        step: %.2f\n", temp->prov_data.num_prov.multipleof);
-        } else if (temp->type == CHANNEL_TYPE_CHOICE) {
+            printf("     multiof: %.2f\n", temp->prov_data.num_prov.multipleof);
+            printf("       value: %.2f\n", temp->data_value.num_val);
+            break;
+
+        case CHANNEL_TYPE_CHOICE: {
             prov_opt_list_t* temp_opt = temp->prov_data.opts_prov;
-            printf("        opts:\n");
+            printf("        enum:\n");
             while(temp_opt != NULL) {
                 printf("              %s\n", temp_opt->opt);
                 temp_opt = temp_opt->next;
             }
+            printf("       value: %s\n", (temp->data_value.str_val != NULL) ? temp->data_value.str_val : "null");
+            break;
+        }
+
+        case CHANNEL_TYPE_STRING:
+            printf("       value: %s\n", (temp->data_value.str_val != NULL) ? temp->data_value.str_val : "null");
+            break;
+
+        default:
+            break;
         }
 
         printf("\n");
@@ -51,40 +69,6 @@ const char* get_device_id(void) {
         eth_mac[0], eth_mac[1], eth_mac[2], eth_mac[3], eth_mac[4], eth_mac[5]
     );
     return id;
-}
-
-static void _remove_channel(device_channel_t** channel_ref, const char* name) {
-
-    device_channel_t* temp = *channel_ref;
-    device_channel_t* prev = NULL;
-    
-    if (temp != NULL && strcmp(temp->name, name) == 0) {
-        *channel_ref = temp->next;
-        free(temp->name);
-
-        if (temp->type == CHANNEL_TYPE_CHOICE) {
-            while (temp->prov_data.opts_prov != NULL) {
-                free(temp->prov_data.opts_prov->opt);
-                temp->prov_data.opts_prov = temp->prov_data.opts_prov->next;
-            }
-        }
-
-        free(temp);
-        return;
-    }
-
-    
-    while (temp != NULL && strcmp(temp->name, name) != 0) {
-        prev = temp;
-        temp = temp->next;
-    }
- 
-    if (temp == NULL)
-        return;
- 
-    prev->next = temp->next;
- 
-    free(temp);
 }
 
 void device_is_mqtt_provisioned(bool* provisioned) {
@@ -149,6 +133,7 @@ void device_add_bool_channel(const char* name, bool cmd, const char* title,
 
     new_channel->cmd = cmd;
     new_channel->type = CHANNEL_TYPE_BOOL;
+    memset(&new_channel->data_value, 0, sizeof(new_channel->data_value));
 
     new_channel->next = g_device.channels;
     g_device.channels = new_channel;
@@ -164,17 +149,14 @@ void device_add_nummber_channel(const char* name, bool cmd, const char* title,
 
     new_channel->cmd = cmd;
     new_channel->type = CHANNEL_TYPE_NUMBER;
+    memset(&new_channel->data_value, 0, sizeof(new_channel->data_value));
+
     new_channel->prov_data.num_prov.min = min;
     new_channel->prov_data.num_prov.max = max;
     new_channel->prov_data.num_prov.multipleof = multipleof;
 
     new_channel->next = g_device.channels;
     g_device.channels = new_channel;
-}
-
-void device_add_string_channel(const char* name, bool cmd, const char* title,
-                    const char* description) {
-
 }
 
 void device_add_multi_option_channel(const char* name, bool cmd, const char* title,
@@ -187,6 +169,7 @@ void device_add_multi_option_channel(const char* name, bool cmd, const char* tit
 
     new_channel->cmd = cmd;
     new_channel->type = CHANNEL_TYPE_CHOICE;
+    memset(&new_channel->data_value, 0, sizeof(new_channel->data_value));
 
     if (opt_count > 0) {
         if (new_channel->prov_data.opts_prov)
@@ -211,8 +194,92 @@ void device_add_multi_option_channel(const char* name, bool cmd, const char* tit
     g_device.channels = new_channel;
 }
 
+void device_add_string_channel(const char* name, bool cmd, const char* title,
+                    const char* description) {
+
+    device_channel_t* new_channel = (device_channel_t*) malloc(sizeof(device_channel_t));
+    
+    new_channel->name = malloc(strlen(name) + 1);
+    strcpy(new_channel->name, name);
+
+    new_channel->cmd = cmd;
+    new_channel->type = CHANNEL_TYPE_STRING;
+    memset(&new_channel->data_value, 0, sizeof(new_channel->data_value));
+
+    new_channel->next = g_device.channels;
+    g_device.channels = new_channel;
+}
+
 void device_remove_channel(const char* name) {
-    _remove_channel(&g_device.channels, name);
+
+    device_channel_t* temp = g_device.channels;
+    device_channel_t* prev = NULL;
+    
+    if (temp != NULL && strcmp(temp->name, name) == 0) {
+        g_device.channels = temp->next;
+        free(temp->name);
+        free(temp->data_value.str_val);
+
+        if (temp->type == CHANNEL_TYPE_CHOICE) {
+            while (temp->prov_data.opts_prov != NULL) {
+                free(temp->prov_data.opts_prov->opt);
+                temp->prov_data.opts_prov = temp->prov_data.opts_prov->next;
+            }
+        }
+
+        free(temp);
+        return;
+    }
+    
+    while (temp != NULL && strcmp(temp->name, name) != 0) {
+        prev = temp;
+        temp = temp->next;
+    }
+ 
+    if (temp == NULL)
+        return;
+ 
+    prev->next = temp->next;
+ 
+    free(temp);
+}
+
+void device_set_channel_value(const char* name, void* value) {
+
+    device_channel_t* temp = g_device.channels;
+
+    while (temp != NULL) {
+        if (strcmp(temp->name, name) == 0) {
+            switch (temp->type) {
+            case CHANNEL_TYPE_BOOL:
+                temp->data_value.bool_val = *((bool*) value);
+                break;
+            
+            case CHANNEL_TYPE_NUMBER:
+                temp->data_value.num_val = *((float*) value);
+                break;
+
+            case CHANNEL_TYPE_CHOICE:
+            case CHANNEL_TYPE_STRING: {
+                char* temp_str = *((char**) value);
+
+                temp->data_value.str_val = realloc(temp->data_value.str_val, strlen(temp_str) + 1);
+
+                strcpy(temp->data_value.str_val, temp_str);
+                break;
+            }
+            
+            default:
+                break;
+            }
+
+            break;
+        }
+
+        temp = temp->next;
+    }
+
+    print_device_channels();
 }
 
 char* device_get_mqtt_provision_json_data(void) {
@@ -237,7 +304,7 @@ char* device_get_mqtt_provision_json_data(void) {
 
         switch (temp->type) {
         case CHANNEL_TYPE_BOOL:
-            cJSON_AddStringToObject(channel_temp, "type", "bool");
+            cJSON_AddStringToObject(channel_temp, "type", "boolean");
             break;
         
         case CHANNEL_TYPE_NUMBER:
@@ -259,6 +326,7 @@ char* device_get_mqtt_provision_json_data(void) {
         }
 
         case CHANNEL_TYPE_STRING:
+            cJSON_AddStringToObject(channel_temp, "type", "string");
             break;
         default:
             break;

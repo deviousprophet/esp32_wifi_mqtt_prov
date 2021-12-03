@@ -59,16 +59,14 @@ void print_device_channels(void) {
     }
 }
 
-const char* get_device_id(void) {
-    char* id = malloc(13);
+void get_device_id(char* id_buffer) {
     uint8_t eth_mac[6];
     esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
     sprintf(
-        id,
+        id_buffer,
         "%02X%02X%02X%02X%02X%02X",
         eth_mac[0], eth_mac[1], eth_mac[2], eth_mac[3], eth_mac[4], eth_mac[5]
     );
-    return id;
 }
 
 void device_is_mqtt_provisioned(bool* provisioned) {
@@ -112,8 +110,8 @@ void device_init(const char* device_name) {
     strcpy(g_device.name, device_name);
 
     /* Device ID - MAC address */
-    g_device.id = malloc(strlen(get_device_id()) + 1);
-    strcpy(g_device.id, get_device_id());
+    g_device.id = malloc(13);
+    get_device_id(g_device.id);
 
     if(g_device.channels) {
         free(g_device.channels);
@@ -293,12 +291,11 @@ char* device_get_mqtt_provision_json_data(void) {
     cJSON_AddStringToObject(device, "device_id", g_device.id);
 
     /* Device Channels */
-    cJSON* channels = cJSON_AddArrayToObject(device, "channels");
+    cJSON* channels = cJSON_AddObjectToObject(device, "channels");
     device_channel_t* temp = g_device.channels;
     while (temp != NULL) {
-        cJSON* new_channel = cJSON_CreateObject();
 
-        cJSON* channel_temp = cJSON_AddObjectToObject(new_channel, temp->name);
+        cJSON* channel_temp = cJSON_AddObjectToObject(channels, temp->name);
 
         cJSON_AddBoolToObject(channel_temp, "command", temp->cmd);
 
@@ -331,8 +328,6 @@ char* device_get_mqtt_provision_json_data(void) {
         default:
             break;
         }
-
-        cJSON_AddItemToArray(channels, new_channel);
 
         temp = temp->next;
     }

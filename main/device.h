@@ -45,7 +45,7 @@ typedef struct {
 } device_t;
 
 /* Get device MAC address */
-const char* get_device_id(void);
+void get_device_id(char* id_buffer);
 
 /* Check for MQTT provision status */
 void device_is_mqtt_provisioned(bool* provisioned);
@@ -91,5 +91,3 @@ char* device_get_mqtt_provision_json_data(void);
 
 /* Print device created channels */
 void print_device_channels(void);
-
-#define DEVICE_MAC_ADDR     (get_device_id())
